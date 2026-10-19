@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교안 AI 분석기 & 퀴즈 생성기</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Marked.js (마크다운 렌더링) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-md border-b border-slate-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-indigo-600 rounded-lg text-white">
+                    <i data-lucide="book-open-check" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">교안 AI 스터디 파트너</h1>
+                    <p class="text-xs text-slate-400">PDF 요약 & 4지선다 10문항 자동 추출</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="apiKeyBtn" onclick="openApiKeyModal()" class="flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm font-medium bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition">
+                    <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
+                    <span id="apiKeyStatusText">API 키 설정</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full flex flex-col gap-6">
+
+        <!-- API Key Missing Warning Banner (Hidden by default) -->
+        <div id="apiKeyBanner" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 text-amber-800 text-sm">
+                <i data-lucide="alert-circle" class="w-5 h-5 text-amber-600 shrink-0"></i>
+                <span>Gemini API 키가 설정되지 않았습니다. AI 요약 및 퀴즈 생성을 위해 먼저 API 키를 등록해주세요.</span>
+            </div>
+            <button onclick="openApiKeyModal()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shrink-0 transition">
+                API 키 등록
+            </button>
+        </div>
+
+        <!-- File Upload Area -->
+        <div id="uploadSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 transition-all">
+            <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-indigo-500 hover:bg-indigo-50/50 transition cursor-pointer flex flex-col items-center justify-center min-h-[220px]">
+                <input type="file" id="fileInput" accept=".pdf" class="hidden" onchange="handleFileSelect(event)">
+                <div class="p-4 bg-indigo-50 text-indigo-600 rounded-full mb-3">
+                    <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-base font-semibold text-slate-700 mb-1">교안 PDF 파일을 여기에 드래그하거나 클릭하세요</h3>
+                <p class="text-xs text-slate-400 mb-4">최대 30MB 이하의 PDF 파일 지원</p>
+                <button type="button" onclick="document.getElementById('fileInput').click()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition">
+                    파일 선택하기
+                </button>
+            </div>
+
+            <!-- Selected File Status Info (Hidden initially) -->
+            <div id="fileInfo" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="p-2.5 bg-red-100 text-red-600 rounded-lg shrink-0">
+                        <i data-lucide="file-text" class="w-6 h-6"></i>
+                    </div>
+                    <div class="truncate">
+                        <p id="fileName" class="text-sm font-semibold text-slate-800 truncate">document.pdf</p>
+                        <p id="fileDetails" class="text-xs text-slate-500">페이지 수 읽는 중... | 0 KB</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button onclick="resetFileSelection()" class="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition">
+                        초기화
+                    </button>
+                    <button id="startAnalyzeBtn" onclick="processPdfAndGenerate()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm flex items-center gap-2 transition disabled:opacity-50">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        <span>AI 분석 및 퀴즈 생성</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Processing Progress Overlay/Card (Hidden) -->
+        <div id="loadingSection" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center flex flex-col items-center justify-center gap-4">
+            <div class="relative flex items-center justify-center">
+                <div class="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                <i data-lucide="brain-circuit" class="w-6 h-6 text-indigo-600 absolute"></i>
+            </div>
+            <div>
+                <h3 id="loadingTitle" class="text-base font-semibold text-slate-800 mb-1">PDF 텍스트를 추출하고 있습니다...</h3>
+                <p id="loadingDesc" class="text-xs text-slate-500">잠시만 기다려주세요.</p>
+            </div>
+            <div class="w-full max-w-md bg-slate-100 rounded-full h-2 overflow-hidden mt-2">
+                <div id="progressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 15%"></div>
+            </div>
+        </div>
+
+        <!-- Result Container (Hidden initially) -->
+        <div id="resultSection" class="hidden flex-1 flex flex-col gap-6">
+
+            <!-- Tabs Navigation -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-1.5 flex flex-wrap sm:flex-nowrap gap-1">
+                <button id="tabBtn1" onclick="switchTab(1)" class="flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition bg-indigo-50 text-indigo-700">
+                    <i data-lucide="layout-list" class="w-4 h-4"></i>
+                    <span>핵심 요약 정리</span>
+                </button>
+                <button id="tabBtn2" onclick="switchTab(2)" class="flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition text-slate-600 hover:bg-slate-100">
+                    <i data-lucide="help-circle" class="w-4 h-4"></i>
+                    <span>예상 문제 (퀴즈 모드)</span>
+                </button>
+                <button id="tabBtn3" onclick="switchTab(3)" class="flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition text-slate-600 hover:bg-slate-100">
+                    <i data-lucide="file-check" class="w-4 h-4"></i>
+                    <span>문제 & 정답 전체보기</span>
+                </button>
+            </div>
+
+            <!-- Tab Content 1: Key Summary -->
+            <div id="tabContent1" class="space-y-6">
+                <!-- Executive Summary Box -->
+                <div class="bg-indigo-900 text-white rounded-2xl p-6 sm:p-8 shadow-md relative overflow-hidden">
+                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
+                        <i data-lucide="book-open" class="w-64 h-64"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="inline-flex items-center gap-2 px-3 py-1 bg-indigo-800/80 border border-indigo-700 rounded-full text-xs font-semibold text-indigo-200 mb-3">
+                            <i data-lucide="award" class="w-3.5 h-3.5"></i>
+                            <span>핵심 요약 노트</span>
+                        </div>
+                        <h2 id="summaryMainTitle" class="text-xl sm:text-2xl font-bold mb-3">교안 주요 개요</h2>
+                        <div id="summaryOverview" class="text-slate-200 text-sm leading-relaxed whitespace-pre-line">
+                            요약 데이터를 생성하는 중입니다...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key Highlights (Bullets) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <i data-lucide="check-circle-2" class="w-5 h-5 text-indigo-600"></i>
+                        <span>핵심 키포인트 3~5선</span>
+                    </h3>
+                    <ul id="keyPointsList" class="space-y-3 text-slate-700 text-sm">
+                        <!-- Dynamic List -->
+                    </ul>
+                </div>
+
+                <!-- Chapter Breakdown Notes -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-indigo-600"></i>
+                        <span>단원별 상세 내용 정리</span>
+                    </h3>
+                    <div id="chapterBreakdown" class="prose prose-slate max-w-none text-sm leading-relaxed space-y-4">
+                        <!-- Markdown Dynamic Content -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content 2: Quiz Mode -->
+            <div id="tabContent2" class="hidden space-y-6">
+                <!-- Score Report Box (Show after submit) -->
+                <div id="scoreReport" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 text-center flex flex-col items-center">
+                    <div id="scoreBadge" class="w-20 h-20 rounded-full flex items-center justify-center font-bold text-2xl mb-3 bg-indigo-100 text-indigo-700">
+                        80점
+                    </div>
+                    <h3 id="scoreTitle" class="text-lg font-bold text-slate-800 mb-1">수고하셨습니다!</h3>
+                    <p id="scoreSub" class="text-xs text-slate-500 mb-4">10문제 중 8문제를 맞히셨습니다.</p>
+                    <button onclick="resetQuiz()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        <span>퀴즈 다시 풀기</span>
+                    </button>
+                </div>
+
+                <!-- Quiz Form Container -->
+                <div id="quizContainer" class="space-y-6">
+                    <!-- Dynamic Question Cards -->
+                </div>
+
+                <!-- Quiz Submit Bar -->
+                <div id="quizActionArea" class="bg-white rounded-xl p-4 border border-slate-200 flex justify-between items-center shadow-sm sticky bottom-4 z-30">
+                    <span id="answeredCountText" class="text-xs text-slate-500 font-medium">0 / 10 문제 작성됨</span>
+                    <button onclick="submitQuiz()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow transition flex items-center gap-2">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        <span>답안 제출 및 채점하기</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Content 3: All Q&A List (Study Mode) -->
+            <div id="tabContent3" class="hidden space-y-6">
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex items-center justify-between text-xs text-indigo-800">
+                    <span class="flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4 text-indigo-600"></i>
+                        <span>전체 문제와 정답, 상세 해설을 한눈에 보며 복습할 수 있습니다.</span>
+                    </span>
+                    <button onclick="window.print()" class="px-3 py-1.5 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-100 transition font-medium text-indigo-700 flex items-center gap-1.5">
+                        <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                        <span>인쇄하기</span>
+                    </button>
+                </div>
+
+                <div id="allQuestionsList" class="space-y-6">
+                    <!-- Dynamic Study Cards -->
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-400">
+            Powered by Google Gemini API &bull; 교안 스마트 학습 솔루션
+        </div>
+    </footer>
+
+    <!-- Modal: API Key Configuration -->
+    <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="key" class="w-5 h-5 text-indigo-600"></i>
+                    <h3 class="font-bold text-slate-800">Gemini API 키 설정</h3>
+                </div>
+                <button onclick="closeApiKeyModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-500 leading-relaxed">
+                Google AI Studio에서 발급받은 Gemini API 키를 입력하세요.<br>
+                API 키는 사용자의 브라우저 LocalStorage에만 저장되며 외부 서버로 전송되지 않습니다.
+            </p>
+
+            <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-slate-700">API Key</label>
+                <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition">
+            </div>
+
+            <div class="flex items-center justify-between text-xs pt-1">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 hover:underline flex items-center gap-1">
+                    <span>API 키 발급받기</span>
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                </a>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button onclick="closeApiKeyModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+                    취소
+                </button>
+                <button onclick="saveApiKey()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition">
+                    저장하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // PDF.js worker setup
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Global State Variables
+        let selectedPdfFile = null;
+        let extractedPdfText = "";
+        let aiGeneratedResult = null;
+        let userQuizAnswers = {}; // { questionIndex: selectedOptionIndex }
+        let isQuizSubmitted = false;
+
+        // On Page Load
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            checkApiKeyStatus();
+            setupDragAndDrop();
+        });
+
+        // 1. API Key Management
+        function checkApiKeyStatus() {
+            const key = localStorage.getItem("gemini_api_key");
+            const banner = document.getElementById("apiKeyBanner");
+            const statusText = document.getElementById("apiKeyStatusText");
+
+            if (key) {
+                banner.classList.add("hidden");
+                statusText.textContent = "API 키 저장됨";
+                statusText.classList.add("text-emerald-400");
+            } else {
+                banner.classList.remove("hidden");
+                statusText.textContent = "API 키 미설정";
+                statusText.classList.remove("text-emerald-400");
+            }
+        }
+
+        function openApiKeyModal() {
+            const savedKey = localStorage.getItem("gemini_api_key") || "";
+            document.getElementById("apiKeyInput").value = savedKey;
+            document.getElementById("apiKeyModal").classList.remove("hidden");
+        }
+
+        function closeApiKeyModal() {
+            document.getElementById("apiKeyModal").classList.add("hidden");
+        }
+
+        function saveApiKey() {
+            const inputVal = document.getElementById("apiKeyInput").value.trim();
+            if (!inputVal) {
+                alert("유효한 API 키를 입력해주세요.");
+                return;
+            }
+            localStorage.setItem("gemini_api_key", inputVal);
+            checkApiKeyStatus();
+            closeApiKeyModal();
+            alert("API 키가 성공적으로 저장되었습니다.");
+        }
+
+        // 2. Drag and Drop & File Handle
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById("dropZone");
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type === 'application/pdf') {
+                    handleSelectedFile(files[0]);
+                } else {
+                    alert('PDF 파일만 첨부 가능합니다.');
+                }
+            });
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                handleSelectedFile(files[0]);
+            }
+        }
+
+        async function handleSelectedFile(file) {
+            selectedPdfFile = file;
+            document.getElementById("fileName").textContent = file.name;
+            const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+            document.getElementById("fileDetails").textContent = `파일 크기: ${sizeInMB} MB | 읽는 중...`;
+            document.getElementById("fileInfo").classList.remove("hidden");
+
+            // Extract page count preview
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                document.getElementById("fileDetails").textContent = `총 ${pdf.numPages} 페이지 | ${sizeInMB} MB`;
+            } catch (err) {
+                console.error("PDF preview error:", err);
+                document.getElementById("fileDetails").textContent = `파일 크기: ${sizeInMB} MB`;
+            }
+        }
+
+        function resetFileSelection() {
+            selectedPdfFile = null;
+            extractedPdfText = "";
+            document.getElementById("fileInput").value = "";
+            document.getElementById("fileInfo").classList.add("hidden");
+            document.getElementById("resultSection").classList.add("hidden");
+        }
+
+        // 3. Extract Text from PDF using PDF.js
+        async function extractTextFromPdf(file) {
+            updateLoadingStatus("PDF 텍스트 추출 중...", "페이지별 텍스트 데이터를 분석하고 있습니다.", 25);
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(" ");
+                fullText += `\n--- [Page ${pageNum}] ---\n` + pageText;
+            }
+            return fullText;
+        }
+
+        // 4. Main Process Flow
+        async function processPdfAndGenerate() {
+            const apiKey = localStorage.getItem("gemini_api_key");
+            if (!apiKey) {
+                alert("Gemini API 키가 필요합니다. 상단에서 API 키를 등록해주세요.");
+                openApiKeyModal();
+                return;
+            }
+
+            if (!selectedPdfFile) {
+                alert("PDF 파일을 먼저 첨부해주세요.");
+                return;
+            }
+
+            // Show UI Loading
+            document.getElementById("uploadSection").classList.add("hidden");
+            document.getElementById("resultSection").classList.add("hidden");
+            document.getElementById("loadingSection").classList.remove("hidden");
+
+            try {
+                // Step 1: Extract Text
+                extractedPdfText = await extractTextFromPdf(selectedPdfFile);
+
+                if (!extractedPdfText || extractedPdfText.trim().length < 50) {
+                    throw new Error("PDF에서 읽을 수 있는 텍스트가 부족합니다. 스캔본 이미지 PDF가 아닌지 확인해주세요.");
+                }
+
+                // Step 2: Call Gemini API
+                updateLoadingStatus("Gemini AI 분석 및 문제 생성 중...", "교안 내용을 바탕으로 요약 노트와 10문항을 생성하고 있습니다.", 65);
+                
+                aiGeneratedResult = await requestGeminiAnalysis(extractedPdfText, apiKey);
+
+                updateLoadingStatus("결과 렌더링 중...", "화면을 구성하고 있습니다.", 95);
+
+                // Step 3: Render Result
+                renderSummaryTab(aiGeneratedResult.summary);
+                renderQuizTab(aiGeneratedResult.quiz);
+                renderStudyTab(aiGeneratedResult.quiz);
+
+                // Show Result UI
+                document.getElementById("loadingSection").classList.add("hidden");
+                document.getElementById("uploadSection").classList.remove("hidden");
+                document.getElementById("resultSection").classList.remove("hidden");
+
+                switchTab(1); // Default to tab 1
+                lucide.createIcons();
+
+            } catch (error) {
+                console.error("Processing error:", error);
+                alert("처리 중 오류가 발생하였습니다: " + error.message);
+                document.getElementById("loadingSection").classList.add("hidden");
+                document.getElementById("uploadSection").classList.remove("hidden");
+            }
+        }
+
+        function updateLoadingStatus(title, desc, progress) {
+            document.getElementById("loadingTitle").textContent = title;
+            document.getElementById("loadingDesc").textContent = desc;
+            document.getElementById("progressBar").style.width = `${progress}%`;
+        }
+
+        // 5. Gemini API Call (Structured Output)
+        async function requestGeminiAnalysis(pdfText, apiKey) {
+            // Trim text if excessively huge (e.g. over 150k chars)
+            const textContent = pdfText.length > 120000 ? pdfText.substring(0, 120000) : pdfText;
+
+            const systemPrompt = `당신은 최고 수준의 대학 교수이자 교육 평가 전문가입니다. 
+제공된 교안 PDF의 텍스트 내용을 바탕으로 다음 두 가지를 완벽하게 생성하십시오.
+
+1. **교안 핵심 요약 노트**:
+   - mainTitle: 교안 전체를 관통하는 주제 제목
+   - overview: 전체 내용을 3~4문장으로 명확히 정리한 개요
+   - keyPoints: 전체 교안에서 가장 중요한 핵심 포인트 3~5개 배열
+   - chapterBreakdown: 단원/주제별로 세부 내용을 마크다운(Markdown) 포맷으로 가독성 높게 체계적으로 정리한 문자열
+
+2. **객관식 4지선다 예상 문제 10문항**:
+   - 교안에 직접 명시되거나 암시된 중요한 개념을 바탕으로 10문제를 출제하십시오.
+   - 각 문제는 다음과 같은 속성을 가져야 합니다:
+     * id: 1부터 10까지의 숫자
+     * question: 문제 질문
+     * options: 보기 4개 (문자열 배열, 4개 필수)
+     * answerIndex: 정답 보기의 인덱스 (0, 1, 2, 3 중 하나)
+     * explanation: 정답에 대한 명쾌하고 친절한 해설
+
+반드시 제시된 JSON 구조 규격을 정확하게 준수하여 응답해야 합니다.`;
+
+            const payload = {
+                contents: [
+                    {
+                        parts: [
+                            { text: `[교안 텍스트 내용 시작]\n${textContent}\n[교안 텍스트 내용 끝]` }
+                        ]
+                    }
+                ],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            summary: {
+                                type: "OBJECT",
+                                properties: {
+                                    mainTitle: { type: "STRING" },
+                                    overview: { type: "STRING" },
+                                    keyPoints: {
+                                        type: "ARRAY",
+                                        items: { type: "STRING" }
+                                    },
+                                    chapterBreakdown: { type: "STRING" }
+                                },
+                                required: ["mainTitle", "overview", "keyPoints", "chapterBreakdown"]
+                            },
+                            quiz: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        id: { type: "INTEGER" },
+                                        question: { type: "STRING" },
+                                        options: {
+                                            type: "ARRAY",
+                                            items: { type: "STRING" }
+                                        },
+                                        answerIndex: { type: "INTEGER" },
+                                        explanation: { type: "STRING" }
+                                    },
+                                    required: ["id", "question", "options", "answerIndex", "explanation"]
+                                }
+                            }
+                        },
+                        required: ["summary", "quiz"]
+                    }
+                }
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+            const response = await fetch(apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error?.message || "Gemini API 호출 실패");
+            }
+
+            const data = await response.json();
+            const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!jsonText) {
+                throw new Error("AI 결과 파싱 오류: 응답 데이터를 찾을 수 없습니다.");
+            }
+
+            return JSON.parse(jsonText);
+        }
+
+        // 6. UI Render Functions
+        function renderSummaryTab(summary) {
+            document.getElementById("summaryMainTitle").textContent = summary.mainTitle || "교안 요약 노트";
+            document.getElementById("summaryOverview").textContent = summary.overview || "";
+
+            // Key Points
+            const pointsContainer = document.getElementById("keyPointsList");
+            pointsContainer.innerHTML = "";
+            (summary.keyPoints || []).forEach(pt => {
+                const li = document.createElement("li");
+                li.className = "flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-100";
+                li.innerHTML = `
+                    <span class="w-2 h-2 rounded-full bg-indigo-600 mt-2 shrink-0"></span>
+                    <span class="text-slate-700 font-medium">${pt}</span>
+                `;
+                pointsContainer.appendChild(li);
+            });
+
+            // Chapter Breakdown (Marked.js)
+            const breakdownContainer = document.getElementById("chapterBreakdown");
+            breakdownContainer.innerHTML = marked.parse(summary.chapterBreakdown || "");
+        }
+
+        function renderQuizTab(quizList) {
+            userQuizAnswers = {};
+            isQuizSubmitted = false;
+            document.getElementById("scoreReport").classList.add("hidden");
+            document.getElementById("quizActionArea").classList.remove("hidden");
+            updateAnsweredCount();
+
+            const container = document.getElementById("quizContainer");
+            container.innerHTML = "";
+
+            quizList.forEach((item, index) => {
+                const card = document.createElement("div");
+                card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4";
+                card.id = `quizCard_${index}`;
+
+                let optionsHtml = "";
+                item.options.forEach((opt, optIdx) => {
+                    optionsHtml += `
+                        <label onclick="selectAnswer(${index}, ${optIdx})" class="quiz-option-label flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition" id="optionLabel_${index}_${optIdx}">
+                            <input type="radio" name="question_${index}" value="${optIdx}" class="mt-0.5 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm text-slate-700 font-medium">${optIdx + 1}. ${opt}</span>
+                        </label>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between gap-3">
+                        <span class="px-2.5 py-1 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg">Q${index + 1}</span>
+                        <div id="cardStatus_${index}" class="text-xs font-semibold text-slate-400">미선택</div>
+                    </div>
+                    <h4 class="text-base font-bold text-slate-800 leading-snug">${item.question}</h4>
+                    <div class="space-y-2 pt-2">
+                        ${optionsHtml}
+                    </div>
+                    <!-- Explanation Area (Show after submit) -->
+                    <div id="quizExplanation_${index}" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+                        <div class="font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="help-circle" class="w-4 h-4 text-indigo-600"></i>
+                            <span>정답 해설</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">${item.explanation}</p>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+
+            lucide.createIcons();
+        }
+
+        function selectAnswer(qIndex, optIndex) {
+            if (isQuizSubmitted) return;
+
+            userQuizAnswers[qIndex] = optIndex;
+            updateAnsweredCount();
+
+            // Highlight selected option visually
+            const options = document.querySelectorAll(`[id^="optionLabel_${qIndex}_"]`);
+            options.forEach((el, idx) => {
+                if (idx === optIndex) {
+                    el.classList.add("border-indigo-600", "bg-indigo-50/60");
+                    el.classList.remove("border-slate-200");
+                } else {
+                    el.classList.remove("border-indigo-600", "bg-indigo-50/60");
+                    el.classList.add("border-slate-200");
+                }
+            });
+
+            const statusEl = document.getElementById(`cardStatus_${qIndex}`);
+            if (statusEl) {
+                statusEl.textContent = "선택 완료";
+                statusEl.className = "text-xs font-semibold text-indigo-600";
+            }
+        }
+
+        function updateAnsweredCount() {
+            const count = Object.keys(userQuizAnswers).length;
+            const total = aiGeneratedResult?.quiz?.length || 10;
+            document.getElementById("answeredCountText").textContent = `${count} / ${total} 문제 작성됨`;
+        }
+
+        function submitQuiz() {
+            if (!aiGeneratedResult || !aiGeneratedResult.quiz) return;
+
+            const quizList = aiGeneratedResult.quiz;
+            const answeredCount = Object.keys(userQuizAnswers).length;
+
+            if (answeredCount < quizList.length) {
+                if (!confirm(`전체 ${quizList.length}문제 중 ${answeredCount}문제만 선택되었습니다. 그대로 제출하시겠습니까?`)) {
+                    return;
+                }
+            }
+
+            isQuizSubmitted = true;
+            let correctCount = 0;
+
+            quizList.forEach((q, index) => {
+                const userAns = userQuizAnswers[index];
+                const card = document.getElementById(`quizCard_${index}`);
+                const statusEl = document.getElementById(`cardStatus_${index}`);
+                const explanationEl = document.getElementById(`quizExplanation_${index}`);
+
+                explanationEl.classList.remove("hidden");
+
+                if (userAns === q.answerIndex) {
+                    correctCount++;
+                    statusEl.textContent = "정답 ✓";
+                    statusEl.className = "text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded";
+                    card.classList.add("border-emerald-300");
+                } else {
+                    statusEl.textContent = "오답 ✗";
+                    statusEl.className = "text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded";
+                    card.classList.add("border-rose-300");
+                }
+
+                // Highlight correct and wrong options
+                q.options.forEach((_, optIdx) => {
+                    const label = document.getElementById(`optionLabel_${index}_${optIdx}`);
+                    if (!label) return;
+
+                    if (optIdx === q.answerIndex) {
+                        label.classList.add("bg-emerald-100/70", "border-emerald-500", "text-emerald-900");
+                    } else if (optIdx === userAns) {
+                        label.classList.add("bg-rose-100/70", "border-rose-500", "text-rose-900");
+                    }
+                });
+            });
+
+            // Score Report Calculation
+            const score = Math.round((correctCount / quizList.length) * 100);
+            document.getElementById("scoreBadge").textContent = `${score}점`;
+            document.getElementById("scoreSub").textContent = `${quizList.length}문제 중 ${correctCount}문제를 맞히셨습니다.`;
+
+            const scoreTitle = document.getElementById("scoreTitle");
+            if (score >= 80) {
+                scoreTitle.textContent = "훌륭합니다! 교안을 잘 이해하고 계십니다. 🎉";
+            } else if (score >= 60) {
+                scoreTitle.textContent = "좋은 성적입니다. 틀린 문제를 복습해보세요. 👍";
+            } else {
+                scoreTitle.textContent = "핵심 요약 노트를 다시 읽고 재도전 해보세요! 💡";
+            }
+
+            document.getElementById("scoreReport").classList.remove("hidden");
+            document.getElementById("quizActionArea").classList.add("hidden");
+
+            // Scroll to top of score report
+            document.getElementById("scoreReport").scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function resetQuiz() {
+            if (aiGeneratedResult && aiGeneratedResult.quiz) {
+                renderQuizTab(aiGeneratedResult.quiz);
+            }
+        }
+
+        function renderStudyTab(quizList) {
+            const container = document.getElementById("allQuestionsList");
+            container.innerHTML = "";
+
+            quizList.forEach((item, index) => {
+                const card = document.createElement("div");
+                card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4 print:border-slate-300 print:shadow-none";
+
+                let optionsListHtml = item.options.map((opt, oIdx) => `
+                    <div class="text-sm p-2.5 rounded-lg border ${oIdx === item.answerIndex ? 'border-emerald-500 bg-emerald-50/70 font-semibold text-emerald-900' : 'border-slate-100 bg-slate-50 text-slate-700'}">
+                        ${oIdx + 1}. ${opt} ${oIdx === item.answerIndex ? ' (정답)' : ''}
+                    </div>
+                `).join("");
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-1 bg-slate-800 text-white font-bold text-xs rounded-lg">문제 ${index + 1}</span>
+                    </div>
+                    <h4 class="text-base font-bold text-slate-800">${item.question}</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        ${optionsListHtml}
+                    </div>
+                    <div class="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-1 text-xs">
+                        <div class="font-bold text-indigo-900">정답 및 해설:</div>
+                        <p class="text-indigo-800 leading-relaxed">${item.explanation}</p>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        // 7. Tab Switcher
+        function switchTab(tabNum) {
+            [1, 2, 3].forEach(num => {
+                const btn = document.getElementById(`tabBtn${num}`);
+                const content = document.getElementById(`tabContent${num}`);
+
+                if (num === tabNum) {
+                    btn.className = "flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition bg-indigo-50 text-indigo-700 shadow-sm";
+                    content.classList.remove("hidden");
+                } else {
+                    btn.className = "flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition text-slate-600 hover:bg-slate-100";
+                    content.classList.add("hidden");
+                }
+            });
+        }
+    </script>
+</body>
+</html>
